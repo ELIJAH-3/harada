@@ -494,6 +494,11 @@
     source: config.source,
     envPresent: Boolean(window.HARADA_CONFIG)
   });
+  if (!config.masterKey) {
+    log.error(
+      "JSONBin key required because config.js has an empty masterKey. Render env vars are copied into config.js only during a rebuild. Set JSONBIN_MASTER_KEY, set Build Command to `node scripts/build-config.js`, then Save, rebuild, and deploy. Confirm by opening /config.js — masterKey must not be empty."
+    );
+  }
   bind();
   loadLocal();
   if (config.masterKey && config.binId) loadRemote();

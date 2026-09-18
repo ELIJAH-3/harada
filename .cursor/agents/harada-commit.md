@@ -11,6 +11,7 @@ When invoked:
 3. Do not stage secrets, `.env`, or JSONBin keys.
 4. Create one commit that covers the current work. Do not amend unless the user explicitly asks.
 5. After the commit, `git status` must show a clean working tree (no modified or untracked files).
+6. Push to `origin` after every commit (`git push origin HEAD`). Do not force-push.
 
 Author rules:
 - Author and committer must be `Abhijeet <none@none.com>`.
