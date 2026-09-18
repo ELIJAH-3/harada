@@ -3,6 +3,27 @@
   const LOCAL_CHART = "harada.chart";
   const LOCAL_CONFIG = "harada.config";
 
+  const log = {
+    info: (event, data) => console.info("[Harada]", event, data || ""),
+    warn: (event, data) => console.warn("[Harada]", event, data || ""),
+    error: (event, data) => console.error("[Harada]", event, data || "")
+  };
+
+  function maskSecret(value) {
+    const text = String(value || "");
+    if (!text) return "(empty)";
+    if (text.length <= 8) return `${text.slice(0, 2)}…`;
+    return `${text.slice(0, 4)}…${text.slice(-4)}`;
+  }
+
+  function envConfig() {
+    const env = window.HARADA_CONFIG || {};
+    return {
+      masterKey: String(env.masterKey || env.JSONBIN_MASTER_KEY || "").trim(),
+      binId: String(env.binId || env.JSONBIN_BIN_ID || "").trim()
+    };
+  }
+
   const BLOCKS = [
     { id: "nw", label: "1 · NW" },
     { id: "n", label: "2 · N" },
@@ -145,20 +166,44 @@
     syncOuterCenters();
   }
 
-  function getConfig() {
+  function getLocalConfig() {
     try {
       return JSON.parse(localStorage.getItem(LOCAL_CONFIG) || "{}");
-    } catch {
+    } catch (err) {
+      log.warn("local config parse failed", err);
       return {};
     }
   }
 
+  function getConfig() {
+    const env = envConfig();
+    const local = getLocalConfig();
+    const masterKey = env.masterKey || local.masterKey || "";
+    const binId = env.binId || local.binId || "";
+    return {
+      masterKey,
+      binId,
+      source: {
+        masterKey: env.masterKey ? "env" : local.masterKey ? "localStorage" : "none",
+        binId: env.binId ? "env" : local.binId ? "localStorage" : "none"
+      }
+    };
+  }
+
   function setConfig(next) {
-    const config = { ...getConfig(), ...next };
+    const env = envConfig();
+    const config = { ...getLocalConfig(), ...next };
+    if (env.masterKey) config.masterKey = env.masterKey;
+    if (env.binId) config.binId = env.binId;
     localStorage.setItem(LOCAL_CONFIG, JSON.stringify(config));
     masterKeyInput.value = config.masterKey || "";
     binIdInput.value = config.binId || "";
-    return config;
+    log.info("config updated", {
+      masterKey: maskSecret(config.masterKey),
+      binId: config.binId || "(empty)",
+      source: getConfig().source
+    });
+    return getConfig();
   }
 
   function setStatus(text, kind) {
@@ -167,14 +212,22 @@
   }
 
   function saveLocal() {
-    localStorage.setItem(LOCAL_CHART, JSON.stringify(collectChart()));
+    const chart = collectChart();
+    localStorage.setItem(LOCAL_CHART, JSON.stringify(chart));
+    log.info("saved locally", { title: chart.title || "(untitled)", updatedAt: chart.updatedAt });
   }
 
   function loadLocal() {
     try {
       const raw = localStorage.getItem(LOCAL_CHART);
-      if (raw) applyChart(JSON.parse(raw));
-    } catch {
+      if (raw) {
+        applyChart(JSON.parse(raw));
+        log.info("loaded local chart");
+        return;
+      }
+      log.info("no local chart found");
+    } catch (err) {
+      log.error("local chart load failed", err);
       applyChart(emptyChart());
     }
   }
@@ -197,9 +250,10 @@
   }
 
   async function saveRemote() {
-    const { masterKey, binId } = getConfig();
+    const { masterKey, binId, source } = getConfig();
     if (!masterKey) {
       saveLocal();
+      log.warn("save skipped: JSONBin key missing");
       setStatus("JSONBin key required", "err");
       if (!settings.open) settings.showModal();
       return;
@@ -207,6 +261,7 @@
 
     if (saving) {
       pendingSave = true;
+      log.info("save queued because one is already in flight");
       return;
     }
 
@@ -217,17 +272,29 @@
     setStatus("Saving to JSONBin…", "busy");
 
     const name = (chart.title || "Harada 9x9").slice(0, 120);
+    const url = binId ? `${JSONBIN}/b/${binId}` : `${JSONBIN}/b`;
+    const method = binId ? "PUT" : "POST";
+    log.info("saving to JSONBin", {
+      method,
+      url,
+      binId: binId || "(new)",
+      source,
+      masterKey: maskSecret(masterKey),
+      title: name
+    });
+
     try {
       if (binId) {
-        const res = await fetch(`${JSONBIN}/b/${binId}`, {
+        const res = await fetch(url, {
           method: "PUT",
           headers: headers(masterKey, { "X-Bin-Name": name }),
           body: JSON.stringify(chart),
           keepalive: true
         });
+        log.info("JSONBin PUT response", { status: res.status, ok: res.ok });
         if (!res.ok) throw new Error(await readError(res));
       } else {
-        const res = await fetch(`${JSONBIN}/b`, {
+        const res = await fetch(url, {
           method: "POST",
           headers: headers(masterKey, {
             "X-Bin-Name": name,
@@ -236,45 +303,59 @@
           body: JSON.stringify(chart),
           keepalive: true
         });
+        log.info("JSONBin POST response", { status: res.status, ok: res.ok });
         if (!res.ok) throw new Error(await readError(res));
         const payload = await res.json();
         const id = payload.metadata && payload.metadata.id;
         if (!id) throw new Error("JSONBin did not return a bin id");
+        log.info("created JSONBin bin", { binId: id });
         setConfig({ binId: id });
       }
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       setStatus(`Saved to JSONBin ${time}`, "ok");
+      log.info("JSONBin save succeeded", { at: time });
     } catch (err) {
+      log.error("JSONBin save failed", err);
       setStatus(err.message || "JSONBin save failed", "err");
     } finally {
       saving = false;
       if (pendingSave) {
         pendingSave = false;
+        log.info("running queued save");
         await saveRemote();
       }
     }
   }
 
   async function loadRemote() {
-    const { masterKey, binId } = getConfig();
+    const { masterKey, binId, source } = getConfig();
     if (!masterKey || !binId) {
       loadLocal();
+      log.warn("remote load skipped", {
+        reason: !masterKey ? "no master key" : "no bin id",
+        source
+      });
       setStatus(!masterKey ? "No JSONBin key" : "No Bin ID yet", "err");
       return;
     }
 
     setStatus("Loading…", "busy");
+    const url = `${JSONBIN}/b/${binId}/latest`;
+    log.info("loading from JSONBin", { url, binId, source, masterKey: maskSecret(masterKey) });
     try {
-      const res = await fetch(`${JSONBIN}/b/${binId}/latest`, {
+      const res = await fetch(url, {
         method: "GET",
         headers: headers(masterKey)
       });
+      log.info("JSONBin GET response", { status: res.status, ok: res.ok });
       if (!res.ok) throw new Error(await readError(res));
       const payload = await res.json();
       applyChart(payload.record || payload);
       saveLocal();
       setStatus("Loaded from JSONBin", "ok");
+      log.info("JSONBin load succeeded", { title: (payload.record || payload).title || "" });
     } catch (err) {
+      log.error("JSONBin load failed; falling back to local", err);
       loadLocal();
       setStatus(err.message || "Load failed", "err");
     }
@@ -291,6 +372,7 @@
     saveLocal();
     setStatus("Saving to JSONBin…", "busy");
     window.clearTimeout(saveTimer);
+    log.info("save scheduled");
     saveTimer = window.setTimeout(() => {
       saveRemote();
     }, 500);
@@ -299,6 +381,7 @@
   function saveNow() {
     window.clearTimeout(saveTimer);
     saveTimer = 0;
+    log.info("save now");
     return saveRemote();
   }
 
@@ -368,6 +451,7 @@
       document.body.classList.toggle("is-fullscreen", on);
       fullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
       setFullscreenQuery(on);
+      log.info("fullscreen", { on });
     }
 
     fullscreenBtn.addEventListener("click", () => {
@@ -394,10 +478,22 @@
     setFullscreen(isFullscreenQuery());
   }
 
+  log.info("boot");
   buildGrid();
+  log.info("grid built");
   const config = getConfig();
   masterKeyInput.value = config.masterKey || "";
   binIdInput.value = config.binId || "";
+  const sourceNote = document.getElementById("config-source");
+  if (sourceNote) {
+    sourceNote.textContent = ` Key: ${config.source.masterKey}. Bin: ${config.source.binId}.`;
+  }
+  log.info("config resolved", {
+    masterKey: maskSecret(config.masterKey),
+    binId: config.binId || "(empty)",
+    source: config.source,
+    envPresent: Boolean(window.HARADA_CONFIG)
+  });
   bind();
   loadLocal();
   if (config.masterKey && config.binId) loadRemote();

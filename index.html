@@ -39,9 +39,11 @@
       <p class="hint">
         This static site saves the chart to
         <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a>.
-        Create a free account and paste the <strong>Master Key</strong>.
+        On Render, set <strong>JSONBIN_MASTER_KEY</strong> and optional
+        <strong>JSONBIN_BIN_ID</strong>. You can also paste them here.
         Every edit is saved to JSONBin automatically.
         Leave Bin ID empty on first save to create a new bin.
+        <span id="config-source"></span>
       </p>
       <label>
         Master Key
@@ -63,6 +65,7 @@
 
   <button type="button" id="btn-exit-fullscreen" class="grid-exit" aria-label="Exit full screen">Exit</button>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
