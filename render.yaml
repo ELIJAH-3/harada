@@ -2,5 +2,5 @@ services:
   - type: web
     name: harada-method
     runtime: static
-    buildCommand: node scripts/build-config.js
+    buildCommand: bash scripts/inject-config.sh
     staticPublishPath: .

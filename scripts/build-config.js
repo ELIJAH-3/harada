@@ -1,6 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 
+function arg(name) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return "";
+  return String(process.argv[index + 1] || "").trim();
+}
+
 function readEnv(...names) {
   for (const name of names) {
     const value = (process.env[name] || "").trim();
@@ -9,38 +15,53 @@ function readEnv(...names) {
   return { name: names[0], value: "" };
 }
 
-const master = readEnv("JSONBIN_MASTER_KEY", "JSONBIN_API_KEY");
-const bin = readEnv("JSONBIN_BIN_ID");
+const fromArgs = {
+  masterKey: arg("--master-key"),
+  binId: arg("--bin-id")
+};
+const fromEnv = {
+  masterKey: readEnv("JSONBIN_MASTER_KEY", "JSONBIN_API_KEY"),
+  binId: readEnv("JSONBIN_BIN_ID")
+};
+
+const config = {
+  masterKey: fromArgs.masterKey || fromEnv.masterKey.value,
+  binId: fromArgs.binId || fromEnv.binId.value
+};
+
 const onRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+const root = path.join(__dirname, "..");
+const configPath = path.join(root, "config.js");
+const indexPath = path.join(root, "index.html");
 
-const related = Object.keys(process.env)
-  .filter((key) => /json|bin|harada|render/i.test(key))
-  .sort();
-
-console.log("[Harada build] environment probe", {
+console.log("[Harada build] injecting JSONBin config", {
   onRender,
-  relatedKeys: related,
-  masterKeyVar: master.value ? master.name : "(missing)",
-  binIdVar: bin.value ? bin.name : "(missing)"
+  masterKeyFrom: fromArgs.masterKey ? "build-arg" : fromEnv.masterKey.value ? fromEnv.masterKey.name : "(missing)",
+  binIdFrom: fromArgs.binId ? "build-arg" : fromEnv.binId.value ? fromEnv.binId.name : "(missing)",
+  relatedKeys: Object.keys(process.env).filter((key) => /json|bin|harada|render/i.test(key)).sort()
 });
 
-if (!master.value && onRender) {
+if (!config.masterKey && onRender) {
   console.error(
-    "[Harada build] JSONBIN_MASTER_KEY is empty. Add it in Render → Environment, then choose Save, rebuild, and deploy (not Save and deploy)."
+    "[Harada build] JSONBIN_MASTER_KEY was not injected. In Render → Settings set Build Command to: bash scripts/inject-config.sh"
   );
   process.exit(1);
 }
 
-const config = {
-  masterKey: master.value,
-  binId: bin.value
-};
-
-const out = path.join(__dirname, "..", "config.js");
 const body = `window.HARADA_CONFIG = ${JSON.stringify(config, null, 2)};\n`;
-fs.writeFileSync(out, body, "utf8");
+fs.writeFileSync(configPath, body, "utf8");
 
-console.log("[Harada build] wrote", out, {
+let html = fs.readFileSync(indexPath, "utf8");
+const inline = `window.HARADA_CONFIG = ${JSON.stringify(config)};`;
+html = html.replace(
+  /<script id="harada-env">[\s\S]*?<\/script>/,
+  `<script id="harada-env">${inline}</script>`
+);
+const stamp = process.env.RENDER_GIT_COMMIT || String(Date.now());
+html = html.replace(/src="config\.js[^"]*"/, `src="config.js?v=${stamp}"`);
+fs.writeFileSync(indexPath, html, "utf8");
+
+console.log("[Harada build] wrote config.js and inlined env into index.html", {
   masterKey: config.masterKey ? "set" : "empty",
   binId: config.binId || "empty"
 });
