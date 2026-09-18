@@ -27,6 +27,8 @@
 
   const cells = {};
   let saveTimer = 0;
+  let saving = false;
+  let pendingSave = false;
 
   function emptyChart() {
     return {
@@ -197,13 +199,21 @@
     const { masterKey, binId } = getConfig();
     if (!masterKey) {
       saveLocal();
-      setStatus("Saved locally · add JSONBin key", "err");
+      setStatus("JSONBin key required", "err");
+      if (!settings.open) settings.showModal();
       return;
     }
 
+    if (saving) {
+      pendingSave = true;
+      return;
+    }
+
+    saving = true;
+    pendingSave = false;
     const chart = collectChart();
-    saveLocal();
-    setStatus("Saving…", "busy");
+    localStorage.setItem(LOCAL_CHART, JSON.stringify(chart));
+    setStatus("Saving to JSONBin…", "busy");
 
     const name = (chart.title || "Harada 9x9").slice(0, 120);
     try {
@@ -211,7 +221,8 @@
         const res = await fetch(`${JSONBIN}/b/${binId}`, {
           method: "PUT",
           headers: headers(masterKey, { "X-Bin-Name": name }),
-          body: JSON.stringify(chart)
+          body: JSON.stringify(chart),
+          keepalive: true
         });
         if (!res.ok) throw new Error(await readError(res));
       } else {
@@ -221,7 +232,8 @@
             "X-Bin-Name": name,
             "X-Bin-Private": "true"
           }),
-          body: JSON.stringify(chart)
+          body: JSON.stringify(chart),
+          keepalive: true
         });
         if (!res.ok) throw new Error(await readError(res));
         const payload = await res.json();
@@ -230,9 +242,15 @@
         setConfig({ binId: id });
       }
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      setStatus(`Saved ${time}`, "ok");
+      setStatus(`Saved to JSONBin ${time}`, "ok");
     } catch (err) {
-      setStatus(err.message || "Save failed", "err");
+      setStatus(err.message || "JSONBin save failed", "err");
+    } finally {
+      saving = false;
+      if (pendingSave) {
+        pendingSave = false;
+        await saveRemote();
+      }
     }
   }
 
@@ -261,10 +279,26 @@
     }
   }
 
+  function persistConfigFromForm() {
+    setConfig({
+      masterKey: masterKeyInput.value.trim(),
+      binId: binIdInput.value.trim()
+    });
+  }
+
   function scheduleSave() {
     saveLocal();
+    setStatus("Saving to JSONBin…", "busy");
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(saveRemote, 1600);
+    saveTimer = window.setTimeout(() => {
+      saveRemote();
+    }, 500);
+  }
+
+  function saveNow() {
+    window.clearTimeout(saveTimer);
+    saveTimer = 0;
+    return saveRemote();
   }
 
   function bind() {
@@ -275,19 +309,19 @@
     });
 
     titleInput.addEventListener("input", scheduleSave);
+    macro.addEventListener("change", saveNow);
+    titleInput.addEventListener("change", saveNow);
 
-    document.getElementById("btn-save").addEventListener("click", () => {
-      window.clearTimeout(saveTimer);
-      saveRemote();
-    });
+    document.getElementById("btn-save").addEventListener("click", saveNow);
     document.getElementById("btn-load").addEventListener("click", loadRemote);
     document.getElementById("btn-settings").addEventListener("click", () => settings.showModal());
 
-    masterKeyInput.addEventListener("change", () => {
-      setConfig({ masterKey: masterKeyInput.value.trim() });
-    });
-    binIdInput.addEventListener("change", () => {
-      setConfig({ binId: binIdInput.value.trim() });
+    masterKeyInput.addEventListener("change", persistConfigFromForm);
+    binIdInput.addEventListener("change", persistConfigFromForm);
+
+    settings.addEventListener("close", () => {
+      persistConfigFromForm();
+      if (getConfig().masterKey) saveNow();
     });
 
     document.getElementById("btn-copy-bin").addEventListener("click", async () => {
@@ -304,9 +338,13 @@
       const wipe = window.confirm("Clear every cell on this chart?");
       if (!wipe) return;
       applyChart(emptyChart());
-      saveLocal();
-      setStatus("Chart cleared", "ok");
+      saveNow();
     });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") saveNow();
+    });
+    window.addEventListener("pagehide", saveNow);
   }
 
   buildGrid();
@@ -316,5 +354,6 @@
   bind();
   loadLocal();
   if (config.masterKey && config.binId) loadRemote();
-  else setStatus(config.masterKey ? "Ready to save" : "Local only");
+  else if (config.masterKey) setStatus("Ready · auto-saves to JSONBin", "ok");
+  else setStatus("JSONBin key required", "err");
 })();
