@@ -64,6 +64,7 @@
         const cell = document.createElement("div");
         cell.className = "cell";
         const area = document.createElement("textarea");
+        area.rows = 1;
         area.maxLength = 240;
         area.autocomplete = "off";
         area.spellcheck = false;
@@ -345,6 +346,52 @@
       if (document.visibilityState === "hidden") saveNow();
     });
     window.addEventListener("pagehide", saveNow);
+
+    const fullscreenBtn = document.getElementById("btn-fullscreen");
+    const exitFullscreenBtn = document.getElementById("btn-exit-fullscreen");
+
+    function isFullscreenQuery() {
+      return new URLSearchParams(window.location.search).get("fullscreen") === "1";
+    }
+
+    function setFullscreenQuery(on) {
+      const url = new URL(window.location.href);
+      if (on) url.searchParams.set("fullscreen", "1");
+      else url.searchParams.delete("fullscreen");
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== next) {
+        window.history.replaceState(null, "", next);
+      }
+    }
+
+    function setFullscreen(on) {
+      document.body.classList.toggle("is-fullscreen", on);
+      fullscreenBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      setFullscreenQuery(on);
+    }
+
+    fullscreenBtn.addEventListener("click", () => {
+      setFullscreen(!document.body.classList.contains("is-fullscreen"));
+    });
+    exitFullscreenBtn.addEventListener("click", () => setFullscreen(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (settings.open) return;
+      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return;
+
+      const fullscreen = document.body.classList.contains("is-fullscreen");
+      if (event.key === "f" || event.key === "F") {
+        event.preventDefault();
+        setFullscreen(!fullscreen);
+        return;
+      }
+      if (event.key === "Escape" && fullscreen) {
+        event.preventDefault();
+        setFullscreen(false);
+      }
+    });
+    window.addEventListener("popstate", () => setFullscreen(isFullscreenQuery()));
+    setFullscreen(isFullscreenQuery());
   }
 
   buildGrid();
