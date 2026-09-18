@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: harada-method
+    runtime: static
+    buildCommand: "true"
+    staticPublishPath: .

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Harada Method · 9×9 Goal Chart</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="seal" aria-hidden="true">九</span>
+      <div>
+        <h1>Harada Method</h1>
+        <p>Open Window 64 · 9×9 goal chart</p>
+      </div>
+    </div>
+    <label class="title-field">
+      <span>Chart title</span>
+      <input id="chart-title" type="text" maxlength="80" placeholder="Name this goal chart" autocomplete="off" />
+    </label>
+    <div class="actions">
+      <p id="status" class="status" role="status">Local only</p>
+      <button type="button" id="btn-load" class="btn">Load</button>
+      <button type="button" id="btn-save" class="btn btn-primary">Save</button>
+      <button type="button" id="btn-settings" class="btn" aria-haspopup="dialog">Settings</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div id="macro" class="macro" aria-label="Harada 9 by 9 goal grid"></div>
+  </main>
+
+  <footer class="note">
+    Fill the inner 3×3: main goal in the center, eight supporting goals around it.
+    Each supporting goal is copied into the center of its matching outer 3×3.
+    Write eight concrete actions around every copied goal.
+  </footer>
+
+  <dialog id="settings" class="panel">
+    <form method="dialog" id="settings-form">
+      <h2>jsonbin.io storage</h2>
+      <p class="hint">
+        This static site saves the chart to
+        <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a>.
+        Create a free account, copy the <strong>Master Key</strong>, then Save.
+        Leave Bin ID empty on first save to create a new bin.
+      </p>
+      <label>
+        Master Key
+        <input id="master-key" type="password" autocomplete="off" placeholder="X-Master-Key" />
+      </label>
+      <label>
+        Bin ID
+        <input id="bin-id" type="text" autocomplete="off" placeholder="Created automatically on first save" />
+      </label>
+      <div class="panel-row">
+        <button type="button" id="btn-new" class="btn">Clear chart</button>
+        <button type="button" id="btn-copy-bin" class="btn">Copy Bin ID</button>
+      </div>
+      <div class="panel-row end">
+        <button type="submit" class="btn btn-primary" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
