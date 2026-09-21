@@ -347,6 +347,28 @@ h1 {
   content: " ⇄";
 }
 
+.cell.swappable {
+  cursor: grab;
+}
+
+.cell.swappable:not(:focus-within) textarea {
+  pointer-events: none;
+}
+
+.cell.swappable:focus-within {
+  cursor: text;
+}
+
+.cell.swappable.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.cell.swappable.drop-target {
+  box-shadow: inset 0 0 0 2px var(--gold);
+  background: #f7e7b8;
+}
+
 .cell.sub[data-key="nw"], .cell.auto[data-key="nw"] { box-shadow: inset 3px 0 0 var(--nw); }
 .cell.sub[data-key="n"],  .cell.auto[data-key="n"]  { box-shadow: inset 3px 0 0 var(--n); }
 .cell.sub[data-key="ne"], .cell.auto[data-key="ne"] { box-shadow: inset 3px 0 0 var(--ne); }

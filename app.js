@@ -117,8 +117,12 @@
         } else {
           mark.textContent = HARADA_MARK[pos];
           area.placeholder = "Action";
+          cell.classList.add("swappable");
+          cell.draggable = true;
+          cell.title = "Drag to swap with another outer cell";
         }
 
+        cell.dataset.cellId = `${block.id}-${pos}`;
         cell.append(mark, area);
         section.append(cell);
         cells[`${block.id}-${pos}`] = area;
@@ -415,6 +419,84 @@
     return saveRemote();
   }
 
+  function swappableCell(node) {
+    const cell = node && node.closest ? node.closest(".cell") : null;
+    return cell && cell.classList.contains("swappable") ? cell : null;
+  }
+
+  function swapCells(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+    const from = cells[fromId];
+    const to = cells[toId];
+    if (!from || !to) return;
+    const previous = from.value;
+    from.value = to.value;
+    to.value = previous;
+    log.info("swapped outer cells", { fromId, toId });
+    scheduleSave();
+  }
+
+  function bindSwap() {
+    let dragId = "";
+
+    macro.addEventListener("dragstart", (event) => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        event.preventDefault();
+        return;
+      }
+      const cell = swappableCell(event.target);
+      if (!cell) {
+        event.preventDefault();
+        return;
+      }
+      dragId = cell.dataset.cellId || "";
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", dragId);
+      cell.classList.add("dragging");
+    });
+
+    macro.addEventListener("dragend", () => {
+      dragId = "";
+      macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
+        el.classList.remove("dragging", "drop-target");
+      });
+    });
+
+    macro.addEventListener("dragover", (event) => {
+      const cell = swappableCell(event.target);
+      if (!cell || cell.dataset.cellId === dragId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    });
+
+    macro.addEventListener("dragenter", (event) => {
+      const cell = swappableCell(event.target);
+      if (!cell) return;
+      event.preventDefault();
+      macro.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+      if (cell.dataset.cellId !== dragId) cell.classList.add("drop-target");
+    });
+
+    macro.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const target = swappableCell(event.target);
+      const fromId = event.dataTransfer.getData("text/plain") || dragId;
+      const toId = target && target.dataset.cellId;
+      macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
+        el.classList.remove("dragging", "drop-target");
+      });
+      if (!target || !fromId || fromId === toId) return;
+      swapCells(fromId, toId);
+    });
+
+    macro.addEventListener("click", (event) => {
+      const cell = swappableCell(event.target);
+      if (!cell || event.target instanceof HTMLTextAreaElement) return;
+      const area = cell.querySelector("textarea");
+      if (area) area.focus();
+    });
+  }
+
   function bind() {
     macro.addEventListener("input", (event) => {
       if (!(event.target instanceof HTMLTextAreaElement)) return;
@@ -510,6 +592,7 @@
     });
     window.addEventListener("popstate", () => setFullscreen(isFullscreenQuery()));
     setFullscreen(isFullscreenQuery());
+    bindSwap();
   }
 
   log.info("boot");
