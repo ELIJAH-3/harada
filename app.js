@@ -102,8 +102,10 @@
             area.placeholder = "Specific, time-bound main goal";
           } else {
             const key = Object.keys(SUB_POS).find((k) => SUB_POS[k] === pos);
-            cell.classList.add("sub");
+            cell.classList.add("sub", "swappable");
             cell.dataset.key = key;
+            cell.draggable = true;
+            cell.title = "Drag to swap this supporting goal and its outer 3×3";
             mark.textContent = HARADA_MARK[pos];
             area.placeholder = "Supporting goal";
           }
@@ -117,9 +119,6 @@
         } else {
           mark.textContent = HARADA_MARK[pos];
           area.placeholder = "Action";
-          cell.classList.add("swappable");
-          cell.draggable = true;
-          cell.title = "Drag to swap with another outer cell";
         }
 
         cell.dataset.cellId = `${block.id}-${pos}`;
@@ -419,78 +418,99 @@
     return saveRemote();
   }
 
-  function swappableCell(node) {
-    const cell = node && node.closest ? node.closest(".cell") : null;
-    return cell && cell.classList.contains("swappable") ? cell : null;
+  function swappableCenterCell(node) {
+    const cell = node && node.closest ? node.closest(".block[data-block='c'] .cell.sub") : null;
+    return cell && cell.dataset.key ? cell : null;
   }
 
-  function swapCells(fromId, toId) {
-    if (!fromId || !toId || fromId === toId) return;
-    const from = cells[fromId];
-    const to = cells[toId];
-    if (!from || !to) return;
-    const previous = from.value;
-    from.value = to.value;
-    to.value = previous;
-    log.info("swapped outer cells", { fromId, toId });
+  function swapCenterAndOuter(fromKey, toKey) {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    const fromPos = SUB_POS[fromKey];
+    const toPos = SUB_POS[toKey];
+    if (fromPos === undefined || toPos === undefined) return;
+
+    const centerFrom = cells[`c-${fromPos}`];
+    const centerTo = cells[`c-${toPos}`];
+    const previousGoal = centerFrom.value;
+    centerFrom.value = centerTo.value;
+    centerTo.value = previousGoal;
+
+    for (let pos = 0; pos < 9; pos += 1) {
+      if (pos === 4) continue;
+      const from = cells[`${fromKey}-${pos}`];
+      const to = cells[`${toKey}-${pos}`];
+      const previous = from.value;
+      from.value = to.value;
+      to.value = previous;
+    }
+
+    syncOuterCenters();
+    log.info("swapped supporting goals and outer 3x3 blocks", { fromKey, toKey });
     scheduleSave();
   }
 
   function bindSwap() {
-    let dragId = "";
+    let dragKey = "";
+
+    function clearSwapState() {
+      dragKey = "";
+      macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
+        el.classList.remove("dragging", "drop-target");
+      });
+    }
 
     macro.addEventListener("dragstart", (event) => {
       if (event.target instanceof HTMLTextAreaElement) {
         event.preventDefault();
         return;
       }
-      const cell = swappableCell(event.target);
+      const cell = swappableCenterCell(event.target);
       if (!cell) {
         event.preventDefault();
         return;
       }
-      dragId = cell.dataset.cellId || "";
+      dragKey = cell.dataset.key;
       event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", dragId);
+      event.dataTransfer.setData("text/plain", dragKey);
       cell.classList.add("dragging");
+      const outer = macro.querySelector(`.block[data-block="${dragKey}"]`);
+      if (outer) outer.classList.add("dragging");
     });
 
-    macro.addEventListener("dragend", () => {
-      dragId = "";
-      macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
-        el.classList.remove("dragging", "drop-target");
-      });
-    });
+    macro.addEventListener("dragend", clearSwapState);
 
     macro.addEventListener("dragover", (event) => {
-      const cell = swappableCell(event.target);
-      if (!cell || cell.dataset.cellId === dragId) return;
+      const cell = swappableCenterCell(event.target);
+      if (!cell || cell.dataset.key === dragKey) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
     });
 
     macro.addEventListener("dragenter", (event) => {
-      const cell = swappableCell(event.target);
+      const cell = swappableCenterCell(event.target);
       if (!cell) return;
       event.preventDefault();
-      macro.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
-      if (cell.dataset.cellId !== dragId) cell.classList.add("drop-target");
+      macro.querySelectorAll(".cell.drop-target, .block.drop-target").forEach((el) => {
+        el.classList.remove("drop-target");
+      });
+      if (cell.dataset.key === dragKey) return;
+      cell.classList.add("drop-target");
+      const outer = macro.querySelector(`.block[data-block="${cell.dataset.key}"]`);
+      if (outer) outer.classList.add("drop-target");
     });
 
     macro.addEventListener("drop", (event) => {
       event.preventDefault();
-      const target = swappableCell(event.target);
-      const fromId = event.dataTransfer.getData("text/plain") || dragId;
-      const toId = target && target.dataset.cellId;
-      macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
-        el.classList.remove("dragging", "drop-target");
-      });
-      if (!target || !fromId || fromId === toId) return;
-      swapCells(fromId, toId);
+      const target = swappableCenterCell(event.target);
+      const fromKey = event.dataTransfer.getData("text/plain") || dragKey;
+      const toKey = target && target.dataset.key;
+      clearSwapState();
+      if (!fromKey || !toKey || fromKey === toKey) return;
+      swapCenterAndOuter(fromKey, toKey);
     });
 
     macro.addEventListener("click", (event) => {
-      const cell = swappableCell(event.target);
+      const cell = swappableCenterCell(event.target);
       if (!cell || event.target instanceof HTMLTextAreaElement) return;
       const area = cell.querySelector("textarea");
       if (area) area.focus();

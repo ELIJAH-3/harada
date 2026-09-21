@@ -369,6 +369,14 @@ h1 {
   background: #f7e7b8;
 }
 
+.block.dragging {
+  opacity: 0.55;
+}
+
+.block.drop-target {
+  box-shadow: 0 0 0 3px var(--gold), var(--shadow);
+}
+
 .cell.sub[data-key="nw"], .cell.auto[data-key="nw"] { box-shadow: inset 3px 0 0 var(--nw); }
 .cell.sub[data-key="n"],  .cell.auto[data-key="n"]  { box-shadow: inset 3px 0 0 var(--n); }
 .cell.sub[data-key="ne"], .cell.auto[data-key="ne"] { box-shadow: inset 3px 0 0 var(--ne); }
