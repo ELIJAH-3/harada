@@ -50,6 +50,8 @@
   let saveTimer = 0;
   let saving = false;
   let pendingSave = false;
+  let ready = false;
+  let dirty = false;
 
   function emptyChart() {
     return {
@@ -211,10 +213,13 @@
     statusEl.className = `status${kind ? ` ${kind}` : ""}`;
   }
 
-  function saveLocal() {
-    const chart = collectChart();
+  function cacheLocal(chart) {
     localStorage.setItem(LOCAL_CHART, JSON.stringify(chart));
-    log.info("saved locally", { title: chart.title || "(untitled)", updatedAt: chart.updatedAt });
+    log.info("cached locally", { title: chart.title || "(untitled)", updatedAt: chart.updatedAt });
+  }
+
+  function saveLocal() {
+    cacheLocal(collectChart());
   }
 
   function loadLocal() {
@@ -250,6 +255,15 @@
   }
 
   async function saveRemote() {
+    if (!ready) {
+      log.info("save skipped: still hydrating from JSONBin");
+      return;
+    }
+    if (!dirty) {
+      log.info("save skipped: no edits in this tab");
+      return;
+    }
+
     const { masterKey, binId, source } = getConfig();
     if (!masterKey) {
       saveLocal();
@@ -312,6 +326,7 @@
         setConfig({ binId: id });
       }
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      dirty = false;
       setStatus(`Saved to JSONBin ${time}`, "ok");
       log.info("JSONBin save succeeded", { at: time });
     } catch (err) {
@@ -336,7 +351,7 @@
         source
       });
       setStatus(!masterKey ? "No JSONBin key" : "No Bin ID yet", "err");
-      return;
+      return false;
     }
 
     setStatus("Loading…", "busy");
@@ -350,14 +365,18 @@
       log.info("JSONBin GET response", { status: res.status, ok: res.ok });
       if (!res.ok) throw new Error(await readError(res));
       const payload = await res.json();
-      applyChart(payload.record || payload);
-      saveLocal();
+      const record = payload.record || payload;
+      applyChart(record);
+      cacheLocal(record);
+      dirty = false;
       setStatus("Loaded from JSONBin", "ok");
-      log.info("JSONBin load succeeded", { title: (payload.record || payload).title || "" });
+      log.info("JSONBin load succeeded", { title: record.title || "", updatedAt: record.updatedAt });
+      return true;
     } catch (err) {
-      log.error("JSONBin load failed; falling back to local", err);
+      log.error("JSONBin load failed; showing local cache", err);
       loadLocal();
-      setStatus(err.message || "Load failed", "err");
+      setStatus("Offline · showing local copy", "err");
+      return false;
     }
   }
 
@@ -368,7 +387,17 @@
     });
   }
 
+  function markDirty() {
+    if (!ready) return false;
+    dirty = true;
+    return true;
+  }
+
   function scheduleSave() {
+    if (!markDirty()) {
+      log.info("ignored edit while hydrating");
+      return;
+    }
     saveLocal();
     setStatus("Saving to JSONBin…", "busy");
     window.clearTimeout(saveTimer);
@@ -379,6 +408,7 @@
   }
 
   function saveNow() {
+    if (!markDirty()) return Promise.resolve();
     window.clearTimeout(saveTimer);
     saveTimer = 0;
     log.info("save now");
@@ -405,7 +435,6 @@
 
     settings.addEventListener("close", () => {
       persistConfigFromForm();
-      if (getConfig().masterKey) saveNow();
     });
 
     document.getElementById("btn-copy-bin").addEventListener("click", async () => {
@@ -426,9 +455,14 @@
     });
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") saveNow();
+      if (document.visibilityState !== "visible") return;
+      if (!ready || dirty) {
+        log.info("skip refresh from JSONBin", { ready, dirty });
+        return;
+      }
+      log.info("tab visible · fetching JSONBin");
+      loadRemote();
     });
-    window.addEventListener("pagehide", saveNow);
 
     const fullscreenBtn = document.getElementById("btn-fullscreen");
     const exitFullscreenBtn = document.getElementById("btn-exit-fullscreen");
@@ -500,8 +534,16 @@
     );
   }
   bind();
-  loadLocal();
-  if (config.masterKey && config.binId) loadRemote();
-  else if (config.masterKey) setStatus("Ready · auto-saves to JSONBin", "ok");
-  else setStatus("JSONBin key required", "err");
+  (async () => {
+    const { masterKey, binId } = getConfig();
+    if (masterKey && binId) {
+      await loadRemote();
+    } else {
+      loadLocal();
+      if (masterKey) setStatus("Ready · auto-saves to JSONBin", "ok");
+      else setStatus("JSONBin key required", "err");
+    }
+    ready = true;
+    log.info("ready", { dirty });
+  })();
 })();
