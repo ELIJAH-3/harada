@@ -329,7 +329,6 @@ h1 {
 
 .cell.auto {
   border: 2px solid var(--gold);
-  cursor: grab;
   background: repeating-linear-gradient(
     -45deg,
     #f8efd4,
@@ -341,20 +340,33 @@ h1 {
 
 .cell.auto textarea {
   font-weight: 700;
-  cursor: grab;
-  pointer-events: none;
+  cursor: default;
 }
 
 .cell.auto .mark::after {
   content: " ⇄";
 }
 
-.block.dragging {
-  opacity: 0.5;
+.cell.swappable {
+  cursor: grab;
 }
 
-.block.drop-target {
-  box-shadow: 0 0 0 3px var(--gold), var(--shadow);
+.cell.swappable:not(:focus-within) textarea {
+  pointer-events: none;
+}
+
+.cell.swappable:focus-within {
+  cursor: text;
+}
+
+.cell.swappable.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.cell.swappable.drop-target {
+  box-shadow: inset 0 0 0 2px var(--gold);
+  background: #f7e7b8;
 }
 
 .cell.sub[data-key="nw"], .cell.auto[data-key="nw"] { box-shadow: inset 3px 0 0 var(--nw); }

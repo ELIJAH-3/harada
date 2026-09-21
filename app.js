@@ -110,8 +110,6 @@
         } else if (pos === 4) {
           cell.classList.add("auto");
           cell.dataset.key = block.id;
-          cell.draggable = true;
-          cell.title = "Drag this 3×3 square to swap it with another outer square";
           mark.textContent = HARADA_MARK[4];
           area.readOnly = true;
           area.tabIndex = -1;
@@ -119,6 +117,9 @@
         } else {
           mark.textContent = HARADA_MARK[pos];
           area.placeholder = "Action";
+          cell.classList.add("swappable");
+          cell.draggable = true;
+          cell.title = "Drag to swap with another outer cell";
         }
 
         cell.dataset.cellId = `${block.id}-${pos}`;
@@ -418,25 +419,20 @@
     return saveRemote();
   }
 
-  function outerBlock(node) {
-    const block = node && node.closest ? node.closest(".block") : null;
-    if (!block || block.dataset.block === "c") return null;
-    return block;
+  function swappableCell(node) {
+    const cell = node && node.closest ? node.closest(".cell") : null;
+    return cell && cell.classList.contains("swappable") ? cell : null;
   }
 
-  function swapBlocks(fromId, toId) {
-    if (!fromId || !toId || fromId === toId || fromId === "c" || toId === "c") return;
-    if (!cells[`${fromId}-0`] || !cells[`${toId}-0`]) return;
-    for (let pos = 0; pos < 9; pos += 1) {
-      if (pos === 4) continue;
-      const from = cells[`${fromId}-${pos}`];
-      const to = cells[`${toId}-${pos}`];
-      const previous = from.value;
-      from.value = to.value;
-      to.value = previous;
-    }
-    syncOuterCenters();
-    log.info("swapped outer 3x3 squares", { fromId, toId });
+  function swapCells(fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+    const from = cells[fromId];
+    const to = cells[toId];
+    if (!from || !to) return;
+    const previous = from.value;
+    from.value = to.value;
+    to.value = previous;
+    log.info("swapped outer cells", { fromId, toId });
     scheduleSave();
   }
 
@@ -444,16 +440,19 @@
     let dragId = "";
 
     macro.addEventListener("dragstart", (event) => {
-      const handle = event.target.closest(".cell.auto");
-      const block = handle && outerBlock(handle);
-      if (!handle || !block) {
+      if (event.target instanceof HTMLTextAreaElement) {
         event.preventDefault();
         return;
       }
-      dragId = block.dataset.block;
+      const cell = swappableCell(event.target);
+      if (!cell) {
+        event.preventDefault();
+        return;
+      }
+      dragId = cell.dataset.cellId || "";
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", dragId);
-      block.classList.add("dragging");
+      cell.classList.add("dragging");
     });
 
     macro.addEventListener("dragend", () => {
@@ -464,30 +463,37 @@
     });
 
     macro.addEventListener("dragover", (event) => {
-      const block = outerBlock(event.target);
-      if (!block || block.dataset.block === dragId) return;
+      const cell = swappableCell(event.target);
+      if (!cell || cell.dataset.cellId === dragId) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
     });
 
     macro.addEventListener("dragenter", (event) => {
-      const block = outerBlock(event.target);
-      if (!block) return;
+      const cell = swappableCell(event.target);
+      if (!cell) return;
       event.preventDefault();
       macro.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
-      if (block.dataset.block !== dragId) block.classList.add("drop-target");
+      if (cell.dataset.cellId !== dragId) cell.classList.add("drop-target");
     });
 
     macro.addEventListener("drop", (event) => {
       event.preventDefault();
-      const target = outerBlock(event.target);
+      const target = swappableCell(event.target);
       const fromId = event.dataTransfer.getData("text/plain") || dragId;
-      const toId = target && target.dataset.block;
+      const toId = target && target.dataset.cellId;
       macro.querySelectorAll(".dragging, .drop-target").forEach((el) => {
         el.classList.remove("dragging", "drop-target");
       });
       if (!target || !fromId || fromId === toId) return;
-      swapBlocks(fromId, toId);
+      swapCells(fromId, toId);
+    });
+
+    macro.addEventListener("click", (event) => {
+      const cell = swappableCell(event.target);
+      if (!cell || event.target instanceof HTMLTextAreaElement) return;
+      const area = cell.querySelector("textarea");
+      if (area) area.focus();
     });
   }
 
