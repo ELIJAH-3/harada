@@ -326,7 +326,7 @@
         setConfig({ binId: id });
       }
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      dirty = false;
+      if (!pendingSave) dirty = false;
       setStatus(`Saved to JSONBin ${time}`, "ok");
       log.info("JSONBin save succeeded", { at: time });
     } catch (err) {
